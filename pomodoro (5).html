@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pomodoro</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zilla+Slab:wght@300;500;600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-0: #0A0A0B;
+    --bg-1: #161314;
+    --ink: #F2ECE4;
+    --ink-dim: #9C938E;
+    --ink-faint: #5C5451;
+    --track: rgba(242,236,228,0.08);
+    --focus: #C22A2E;
+    --focus-soft: rgba(194,42,46,0.22);
+    --rest: #7C3336;
+    --rest-soft: rgba(124,51,54,0.22);
+    --focus-adv: #2E5FA6;
+    --focus-adv-soft: rgba(46,95,166,0.24);
+    --rest-adv: #35506E;
+    --rest-adv-soft: rgba(53,80,110,0.24);
+    --accent: var(--focus);
+    --accent-soft: var(--focus-soft);
+    --ring-size: min(62vw, 420px);
+  }
+
+  *{ box-sizing: border-box; }
+
+  html, body{
+    height: 100%;
+  }
+
+  body{
+    margin: 0;
+    background:
+      radial-gradient(circle at 50% 15%, var(--accent-soft), transparent 55%),
+      var(--bg-0);
+    color: var(--ink);
+    font-family: 'Work Sans', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 20px;
+    transition: background-color 0.6s ease;
+  }
+
+  /* --- fondo ambiental: motas de luz cayendo, como arena en un reloj --- */
+  .bg-scene{
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .scene-canvas{
+    position: absolute;
+    inset: -120px;
+    width: calc(100% + 240px);
+    height: calc(100% + 240px);
+    filter: blur(70px) saturate(130%);
+    opacity: 0.8;
+  }
+
+  .grain{
+    position: absolute;
+    inset: -10%;
+    opacity: 0.035;
+    mix-blend-mode: overlay;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
+  }
+
+  .app{
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    max-width: 480px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .eyebrow{
+    font-size: 0.8rem;
+    letter-spacing: 0.02em;
+    color: var(--ink-faint);
+    margin-bottom: 6px;
+  }
+
+  .title{
+    font-family: 'Zilla Slab', serif;
+    font-weight: 500;
+    font-size: clamp(1.6rem, 5vw, 2.1rem);
+    color: var(--ink);
+    margin: 0 0 30px 0;
+    text-align: center;
+  }
+
+  /* --- mode switch --- */
+  .switch{
+    display: flex;
+    gap: 4px;
+    background: var(--bg-1);
+    border: 1px solid rgba(243,238,227,0.08);
+    border-radius: 999px;
+    padding: 5px;
+    margin-bottom: 40px;
+  }
+
+  .switch button{
+    appearance: none;
+    border: none;
+    background: transparent;
+    color: var(--ink-dim);
+    font-family: 'Work Sans', sans-serif;
+    font-size: 0.88rem;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+
+  .switch button.active{
+    color: var(--ink);
+    font-weight: 600;
+  }
+
+  .switch button[data-mode].active{ background: var(--accent); }
+
+  .level-switch{
+    background: transparent;
+    border: none;
+    padding: 0;
+    margin-bottom: 14px;
+    gap: 22px;
+  }
+
+  .level-switch button{
+    padding: 4px 2px;
+    color: var(--ink-faint);
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-radius: 0;
+    border-bottom: 1px solid transparent;
+  }
+
+  .level-switch button.active{
+    background: transparent;
+    color: var(--ink);
+    border-bottom-color: var(--accent);
+    font-weight: 600;
+  }
+  .ring-wrap{
+    position: relative;
+    width: var(--ring-size);
+    height: var(--ring-size);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 36px;
+  }
+
+  .ring-wrap svg{
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+  }
+
+  .ring-track{
+    fill: none;
+    stroke: var(--track);
+    stroke-width: 3.5;
+  }
+
+  .ring-progress{
+    fill: none;
+    stroke: var(--ink);
+    stroke-width: 3.5;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 1s linear, stroke 0.4s ease;
+  }
+
+  .ring-wrap.running .ring-progress{
+    filter: drop-shadow(0 0 12px var(--accent-soft)) drop-shadow(0 0 3px var(--accent));
+  }
+
+  @media (prefers-reduced-motion: no-preference){
+    .ring-wrap.running{
+      animation: breathe 3.6s ease-in-out infinite;
+    }
+  }
+
+  @keyframes breathe{
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.012); }
+  }
+
+  .ring-center{
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .time{
+    font-family: 'Zilla Slab', serif;
+    font-weight: 300;
+    font-size: clamp(3.4rem, 15vw, 5.6rem);
+    line-height: 1;
+    font-variant-numeric: lining-nums tabular-nums;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+  }
+
+  .state-label{
+    margin-top: 10px;
+    font-size: 0.92rem;
+    color: var(--ink-dim);
+    letter-spacing: 0.01em;
+  }
+
+  /* --- controls --- */
+  .controls{
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    margin-bottom: 34px;
+  }
+
+  .btn{
+    appearance: none;
+    border: none;
+    cursor: pointer;
+    font-family: 'Work Sans', sans-serif;
+    transition: transform 0.15s ease, background-color 0.3s ease, opacity 0.2s ease;
+  }
+
+  .btn:active{ transform: scale(0.96); }
+
+  .btn-primary{
+    background: var(--accent);
+    color: var(--ink);
+    font-weight: 600;
+    font-size: 1.02rem;
+    padding: 16px 44px;
+    border-radius: 999px;
+  }
+
+  .btn-secondary{
+    background: transparent;
+    color: var(--ink-dim);
+    font-size: 0.88rem;
+    font-weight: 500;
+    padding: 10px 6px;
+    border-bottom: 1px solid transparent;
+  }
+
+  .btn-secondary:hover{
+    color: var(--ink);
+    border-bottom-color: var(--ink-faint);
+  }
+
+  .btn:focus-visible{
+    outline: 2px solid var(--ink);
+    outline-offset: 3px;
+  }
+
+  /* --- cycles --- */
+  .cycles{
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .dot{
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--track);
+    transition: background-color 0.3s ease;
+  }
+
+  .dot.done{
+    background: var(--focus);
+  }
+
+  .cycles-label{
+    font-size: 0.76rem;
+    color: var(--ink-faint);
+    margin-top: 12px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+
+<div class="bg-scene" aria-hidden="true">
+  <canvas class="scene-canvas" id="auroraCanvas"></canvas>
+  <div class="grain"></div>
+</div>
+
+<div class="app">
+  <div class="eyebrow">temporizador</div>
+  <h1 class="title">Enfoque, luego descanso</h1>
+
+  <div class="switch level-switch" role="tablist" aria-label="Nivel">
+    <button data-level="basico" class="active" role="tab" aria-selected="true">Básico</button>
+    <button data-level="avanzado" role="tab" aria-selected="false">Avanzado</button>
+  </div>
+
+  <div class="switch" role="tablist" aria-label="Modo">
+    <button data-mode="focus" class="active" role="tab" aria-selected="true">Enfoque · 25 min</button>
+    <button data-mode="rest" role="tab" aria-selected="false">Descanso · 5 min</button>
+  </div>
+
+  <div class="ring-wrap" id="ringWrap">
+    <svg viewBox="0 0 200 200">
+      <circle class="ring-track" cx="100" cy="100" r="92"></circle>
+      <circle class="ring-progress" id="ringProgress" cx="100" cy="100" r="92"></circle>
+    </svg>
+    <div class="ring-center">
+      <div class="time" id="timeDisplay">25:00</div>
+      <div class="state-label" id="stateLabel">Listo para enfocarte</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <button class="btn btn-secondary" id="resetBtn">Reiniciar</button>
+    <button class="btn btn-primary" id="startBtn">Iniciar</button>
+  </div>
+
+  <div class="cycles" id="cycles">
+    <span class="dot"></span>
+    <span class="dot"></span>
+    <span class="dot"></span>
+    <span class="dot"></span>
+  </div>
+  <div class="cycles-label">pomodoros completados hoy</div>
+</div>
+
+<script>
+  const LEVELS = {
+    basico:   { focus: 25 * 60, rest: 5 * 60 },
+    avanzado: { focus: 50 * 60, rest: 15 * 60 }
+  };
+  const MODE_TEXT = {
+    basico:   { focus: 'Enfoque · 25 min', rest: 'Descanso · 5 min' },
+    avanzado: { focus: 'Enfoque · 50 min', rest: 'Descanso · 15 min' }
+  };
+  const LABELS_READY = { focus: 'Listo para enfocarte', rest: 'Listo para descansar' };
+  const LABELS_RUNNING = { focus: 'Enfocado', rest: 'Descansando' };
+  const LABELS_PAUSED = { focus: 'En pausa', rest: 'En pausa' };
+
+  let level = 'basico';
+  let mode = 'focus';
+  let remaining = LEVELS[level].focus;
+  let timerId = null;
+  let running = false;
+  let completedCycles = 0;
+
+  const timeDisplay = document.getElementById('timeDisplay');
+  const stateLabel = document.getElementById('stateLabel');
+  const startBtn = document.getElementById('startBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const ringWrap = document.getElementById('ringWrap');
+  const ringProgress = document.getElementById('ringProgress');
+  const switchButtons = document.querySelectorAll('.switch[aria-label="Modo"] button');
+  const levelButtons = document.querySelectorAll('.level-switch button');
+  const dots = document.querySelectorAll('.dot');
+
+  const RADIUS = 92;
+  const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+  ringProgress.style.strokeDasharray = CIRCUMFERENCE;
+
+  function formatTime(sec){
+    const m = Math.floor(sec / 60).toString().padStart(2, '0');
+    const s = Math.floor(sec % 60).toString().padStart(2, '0');
+    return m + ':' + s;
+  }
+
+  function updateDisplay(){
+    timeDisplay.textContent = formatTime(remaining);
+    const total = LEVELS[level][mode];
+    const fraction = remaining / total;
+    ringProgress.style.strokeDashoffset = CIRCUMFERENCE * (1 - fraction);
+  }
+
+  function refreshModeLabels(){
+    switchButtons.forEach(btn => {
+      btn.textContent = MODE_TEXT[level][btn.dataset.mode];
+    });
+  }
+
+  function updateAccentColors(){
+    const isAdvanced = level === 'avanzado';
+    if (mode === 'focus'){
+      document.documentElement.style.setProperty('--accent', isAdvanced ? 'var(--focus-adv)' : 'var(--focus)');
+      document.documentElement.style.setProperty('--accent-soft', isAdvanced ? 'var(--focus-adv-soft)' : 'var(--focus-soft)');
+    } else {
+      document.documentElement.style.setProperty('--accent', isAdvanced ? 'var(--rest-adv)' : 'var(--rest)');
+      document.documentElement.style.setProperty('--accent-soft', isAdvanced ? 'var(--rest-adv-soft)' : 'var(--rest-soft)');
+    }
+    if (typeof refreshAuroraColors === 'function') refreshAuroraColors();
+  }
+
+  function setLevel(newLevel){
+    level = newLevel;
+    levelButtons.forEach(btn => {
+      const isActive = btn.dataset.level === level;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', isActive);
+    });
+    refreshModeLabels();
+    updateAccentColors();
+    remaining = LEVELS[level][mode];
+    updateDisplay();
+    updateStateLabel();
+  }
+
+  function setMode(newMode, resetTime = true){
+    mode = newMode;
+    updateAccentColors();
+    switchButtons.forEach(btn => {
+      const isActive = btn.dataset.mode === mode;
+      btn.classList.toggle('active', isActive);
+      btn.setAttribute('aria-selected', isActive);
+    });
+    if (resetTime){
+      remaining = LEVELS[level][mode];
+    }
+    updateDisplay();
+    updateStateLabel();
+  }
+
+  function updateStateLabel(){
+    if (running){
+      stateLabel.textContent = LABELS_RUNNING[mode];
+    } else if (remaining < LEVELS[level][mode]){
+      stateLabel.textContent = LABELS_PAUSED[mode];
+    } else {
+      stateLabel.textContent = LABELS_READY[mode];
+    }
+  }
+
+  function tick(){
+    remaining -= 1;
+    if (remaining <= 0){
+      remaining = 0;
+      updateDisplay();
+      finishSession();
+      return;
+    }
+    updateDisplay();
+  }
+
+  function start(){
+    if (running) return;
+    running = true;
+    ringWrap.classList.add('running');
+    startBtn.textContent = 'Pausar';
+    updateStateLabel();
+    timerId = setInterval(tick, 1000);
+  }
+
+  function pause(){
+    running = false;
+    ringWrap.classList.remove('running');
+    startBtn.textContent = 'Continuar';
+    clearInterval(timerId);
+    updateStateLabel();
+  }
+
+  function reset(){
+    clearInterval(timerId);
+    running = false;
+    ringWrap.classList.remove('running');
+    startBtn.textContent = 'Iniciar';
+    remaining = LEVELS[level][mode];
+    updateDisplay();
+    updateStateLabel();
+  }
+
+  function finishSession(){
+    clearInterval(timerId);
+    running = false;
+    ringWrap.classList.remove('running');
+    playAlarm();
+
+    if (mode === 'focus'){
+      completedCycles = Math.min(completedCycles + 1, dots.length);
+      updateDots();
+      setMode('rest');
+    } else {
+      setMode('focus');
+    }
+    startBtn.textContent = 'Iniciar';
+    updateStateLabel();
+  }
+
+  function updateDots(){
+    dots.forEach((dot, i) => {
+      dot.classList.toggle('done', i < completedCycles);
+    });
+  }
+
+  // --- Alarma: suena exactamente 2 segundos al terminar ---
+  function playAlarm(){
+    try{
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctx = new AudioCtx();
+      const duration = 2; // segundos exactos
+      const now = ctx.currentTime;
+
+      const beepPattern = [0, 0.4, 0.8, 1.2]; // inicios de cada beep dentro de los 2s
+      beepPattern.forEach(offset => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = 880;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+
+        const start = now + offset;
+        const end = start + 0.32;
+        gain.gain.setValueAtTime(0, start);
+        gain.gain.linearRampToValueAtTime(0.35, start + 0.02);
+        gain.gain.linearRampToValueAtTime(0, end);
+
+        osc.start(start);
+        osc.stop(end);
+      });
+
+      setTimeout(() => ctx.close(), (duration + 0.5) * 1000);
+    } catch(e){
+      console.warn('No se pudo reproducir la alarma', e);
+    }
+  }
+
+  startBtn.addEventListener('click', () => {
+    if (running) pause(); else start();
+  });
+
+  resetBtn.addEventListener('click', reset);
+
+  levelButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.level === level) return;
+      clearInterval(timerId);
+      running = false;
+      ringWrap.classList.remove('running');
+      startBtn.textContent = 'Iniciar';
+      setLevel(btn.dataset.level);
+    });
+  });
+
+  switchButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.mode === mode) return;
+      clearInterval(timerId);
+      running = false;
+      ringWrap.classList.remove('running');
+      startBtn.textContent = 'Iniciar';
+      setMode(btn.dataset.mode);
+    });
+  });
+
+  refreshModeLabels();
+  setMode('focus');
+
+  // --- Fondo: niebla de color fluida, tipo aurora, detrás del temporizador ---
+  // Nubes de color suaves que se desplazan lentamente en curvas orgánicas,
+  // con tonos derivados del acento activo (foco/descanso, básico/avanzado),
+  // más un resplandor extra que sigue al cursor con inercia.
+  (function initAurora(){
+    const canvas = document.getElementById('auroraCanvas');
+    const ctx = canvas.getContext('2d');
+    const MARGIN = 120;
+    let width, height, dpr;
+    let accentColor = '#C22A2E';
+
+    window.refreshAuroraColors = function(){
+      const raw = getComputedStyle(document.documentElement).getPropertyValue('--accent');
+      if (raw) accentColor = raw.trim();
+    };
+    refreshAuroraColors();
+
+    function hexToRgb(hex){
+      hex = hex.trim().replace('#', '');
+      if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+      const num = parseInt(hex, 16);
+      return { r: (num >> 16) & 255, g: (num >> 8) & 255, b: num & 255 };
+    }
+
+    function rgbToHsl({ r, g, b }){
+      r /= 255; g /= 255; b /= 255;
+      const max = Math.max(r, g, b), min = Math.min(r, g, b);
+      let h, s, l = (max + min) / 2;
+      if (max === min){ h = s = 0; }
+      else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max){
+          case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+          case g: h = (b - r) / d + 2; break;
+          default: h = (r - g) / d + 4;
+        }
+        h *= 60;
+      }
+      return { h, s, l };
+    }
+
+    function hslToRgb(h, s, l){
+      h = ((h % 360) + 360) % 360 / 360;
+      let r, g, b;
+      if (s === 0){ r = g = b = l; }
+      else {
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      return { r: Math.round(r * 255), g: Math.round(g * 255), b: Math.round(b * 255) };
+    }
+
+    // --- el cursor deja una estela suave dentro de la niebla ---
+    let pointerX = null, pointerY = null;
+    let glowX = 0, glowY = 0, glowActive = 0;
+    window.addEventListener('pointermove', (e) => {
+      pointerX = e.clientX + MARGIN;
+      pointerY = e.clientY + MARGIN;
+    });
+    window.addEventListener('pointerleave', () => { pointerX = null; pointerY = null; });
+    document.addEventListener('mouseleave', () => { pointerX = null; pointerY = null; });
+
+    let blobs = [];
+
+    function buildBlobs(){
+      // 5 nubes con tonos derivados del acento (variando matiz/luminosidad)
+      // para que la niebla tenga varios colores en vez de uno solo plano.
+      const hueOffsets = [-34, -12, 0, 16, 38];
+      blobs = hueOffsets.map((offset, i) => ({
+        hueOffset: offset,
+        lightBoost: (i % 2 === 0) ? 0.06 : -0.04,
+        freqX: 0.00007 + Math.random() * 0.00006,
+        freqY: 0.00006 + Math.random() * 0.00006,
+        phaseX: Math.random() * Math.PI * 2,
+        phaseY: Math.random() * Math.PI * 2,
+        ampXFactor: 0.28 + Math.random() * 0.16,
+        ampYFactor: 0.30 + Math.random() * 0.16,
+        radiusFactor: 0.30 + Math.random() * 0.14,
+        pulseFreq: 0.00009 + Math.random() * 0.00008,
+        pulsePhase: Math.random() * Math.PI * 2,
+        alpha: 0.16 + Math.random() * 0.06
+      }));
+    }
+    buildBlobs();
+
+    function resize(){
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      width = window.innerWidth + MARGIN * 2;
+      height = window.innerHeight + MARGIN * 2;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function frame(t){
+      ctx.clearRect(0, 0, width, height);
+
+      const baseHsl = rgbToHsl(hexToRgb(accentColor));
+      const cx = width / 2;
+      const cy = height / 2;
+
+      ctx.globalCompositeOperation = 'lighter';
+      blobs.forEach(bl => {
+        const x = cx + Math.sin(t * bl.freqX + bl.phaseX) * width * bl.ampXFactor;
+        const y = cy + Math.cos(t * bl.freqY + bl.phaseY) * height * bl.ampYFactor;
+        const pulse = 1 + Math.sin(t * bl.pulseFreq + bl.pulsePhase) * 0.18;
+        const radius = Math.max(width, height) * bl.radiusFactor * pulse;
+
+        const c = hslToRgb(
+          baseHsl.h + bl.hueOffset,
+          Math.min(1, baseHsl.s + 0.05),
+          Math.min(0.72, Math.max(0.28, baseHsl.l + bl.lightBoost))
+        );
+
+        const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
+        grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${bl.alpha})`);
+        grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+
+      // resplandor que sigue al cursor, con inercia (se desliza detrás del puntero)
+      const targetActive = pointerX !== null ? 1 : 0;
+      glowActive += (targetActive - glowActive) * 0.06;
+      if (pointerX !== null){
+        glowX += (pointerX - glowX) * 0.055;
+        glowY += (pointerY - glowY) * 0.055;
+      }
+      if (glowActive > 0.01){
+        const c = hslToRgb(baseHsl.h, Math.min(1, baseHsl.s + 0.08), Math.min(0.78, baseHsl.l + 0.14));
+        const r = Math.max(width, height) * 0.16;
+        const grad = ctx.createRadialGradient(glowX, glowY, 0, glowX, glowY, r);
+        grad.addColorStop(0, `rgba(${c.r},${c.g},${c.b},${0.22 * glowActive})`);
+        grad.addColorStop(1, `rgba(${c.r},${c.g},${c.b},0)`);
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(glowX, glowY, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // vignette suave: aclara la niebla lejos del centro y la atenúa
+      // detrás del anillo/timer para que el texto siga muy legible.
+      ctx.globalCompositeOperation = 'destination-out';
+      const holeGrad = ctx.createRadialGradient(cx, height * 0.40, 0, cx, height * 0.40, Math.min(width, height) * 0.34);
+      holeGrad.addColorStop(0, 'rgba(0,0,0,0.55)');
+      holeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = holeGrad;
+      ctx.beginPath();
+      ctx.arc(cx, height * 0.40, Math.min(width, height) * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'source-over';
+
+      requestAnimationFrame(frame);
+    }
+
+    window.addEventListener('resize', resize);
+    resize();
+    requestAnimationFrame(frame);
+  })();
+</script>
+
+</body>
+</html>
